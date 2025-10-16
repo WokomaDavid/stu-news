@@ -16,27 +16,33 @@ const ManageAdmins = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // call serverless endpoint
+    const session = await supabase.auth.getSession();
+    const token = session?.data?.session?.access_token || null;
 
-    const { data, error } = await supabase.auth.admin.createUser({
-      email: form.email,
-      password: form.password,
-      user_metadata: { name: form.name },
-    });
+    try {
+      const resp = await fetch('/api/create-admin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({ email: form.email, password: form.password, name: form.name }),
+      });
 
-    if (!error) {
-      const { error: insertErr } = await supabase.from('admins').insert([{ id: data.user.id, email: form.email, name: form.name }]);
-      if (insertErr) {
-        console.error('insert admin row error', insertErr);
-        alert('Admin created but DB insert failed: ' + (insertErr.message || JSON.stringify(insertErr)));
-      } else {
-        alert('Admin registered!');
-        try {
-          await logAction(user?.id || null, 'register_admin', data.user.id, { email: form.email, name: form.name });
-        } catch (err) { console.warn('logAction failed', err); }
+      const json = await resp.json();
+      if (!resp.ok) {
+        console.error('create-admin API error', json);
+        alert('Error creating admin: ' + (json?.error?.message || json?.error || JSON.stringify(json)));
+        return;
       }
-    } else {
-      console.error('createUser error', error);
-      alert('Error creating admin: ' + (error.message || JSON.stringify(error)));
+
+      alert('Admin registered!');
+      try { await logAction(user?.id || null, 'register_admin', json.id, { email: form.email, name: form.name }); } catch (err) { console.warn('logAction failed', err); }
+      setForm({ email: '', password: '', name: '' });
+    } catch (err) {
+      console.error('create-admin request failed', err);
+      alert('Create admin request failed: ' + String(err));
     }
   };
 
